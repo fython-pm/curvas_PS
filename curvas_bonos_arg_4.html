@@ -273,11 +273,9 @@ function polyR(pts,d=2){
   const xs=pts.map(p=>p.duration),ys=pts.map(p=>p.rate);
   const A=xs.map(x=>Array.from({length:d+1},(_,i)=>Math.pow(x,i)));
   const At=A[0].map((_,c)=>A.map(r=>r[c]));
-  const AtA=At.map(r=>At[0].map((_,c)=>r.reduce((s,_,k)=>s+r[k]*At[k][c],0)));
-  // fix: mmul properly
-  const AtA2=At.map(row=>xs.map((_,c)=>row.reduce((s,v,k)=>s+v*A[c][k],0)));
+  const AtA=At.map(row=>At.map(col=>row.reduce((s,v,k)=>s+v*col[k],0)));
   const Aty=At.map(row=>row.reduce((s,v,i)=>s+v*ys[i],0));
-  const co=gauss(AtA2,Aty);if(!co)return null;
+  const co=gauss(AtA,Aty);if(!co)return null;
   const my=ys.reduce((a,b)=>a+b)/n;
   const yh=xs.map(x=>co.reduce((s,c,i)=>s+c*Math.pow(x,i),0));
   const ss_r=ys.reduce((s,y,i)=>s+(y-yh[i])**2,0);
