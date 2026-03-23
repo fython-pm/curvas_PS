@@ -186,11 +186,10 @@ let allC={},actC={},chart=null,sel=[],modalT=null;
 async function loadData(){
   try{
     // Proxy para evitar bloqueo CORS de Google Sheets
-    const proxyURL=`https://api.allorigins.win/get?url=${encodeURIComponent(CSV)}`;
+    const proxyURL=`https://corsproxy.io/?${encodeURIComponent(CSV)}`;
     const r=await fetch(proxyURL);
     if(!r.ok) throw new Error(`HTTP ${r.status}`);
-    const json=await r.json();
-    parseCSV(json.contents);
+    parseCSV(await r.text());
     setStatus('ok','Datos actualizados');
     document.getElementById('last-updated').textContent='Actualizado: '+new Date().toLocaleTimeString('es-AR');
   }catch(e){
