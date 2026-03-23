@@ -125,6 +125,7 @@
     <div class="cg"><label>Curva 1</label><div class="sw"><select class="cs" id="s1" onchange="upd()"><option value="">— Seleccionar curva —</option></select></div></div>
     <div class="cg"><label>Curva 2</label><div class="sw"><select class="cs" id="s2" onchange="upd()"><option value="">— Ninguna —</option></select></div></div>
     <div class="cg"><label>Curva 3</label><div class="sw"><select class="cs" id="s3" onchange="upd()"><option value="">— Ninguna —</option></select></div></div>
+    <div class="cg"><label>Convención</label><div class="sw"><select class="cs" id="sconv" onchange="updConv()" style="min-width:110px"><option value="TEA">TEA</option><option value="TNA">TNA</option><option value="TEM">TEM</option></select></div></div>
     <div class="cg"><label>&nbsp;</label><button class="btn-clear" onclick="clearAll()">✕ Limpiar</button></div>
   </div>
 
@@ -181,6 +182,23 @@ const PAL=[
 const RT={Lecaps:'TEM',Botes:'TEM',CER:'TEA',Bolis:'TEA','Sintéticos ARS':'TEA','Sintéticos USD':'TEA',Bonares:'TEA',Globales:'TEA',Bopreales:'TEA',Futuros:'TNA',TAMAR:'TNA'};
 const NAMES=['Lecaps','Botes','CER','Bolis','Sintéticos ARS','Sintéticos USD','Bonares','Globales','Bopreales','Futuros','TAMAR'];
 
+// Columnas (0-indexed) para cada curva según convención. null = no disponible
+const COLS={
+  Lecaps:      {TEA:18, TNA:20, TEM:19},
+  Botes:       {TEA:18, TNA:20, TEM:19},
+  CER:         {TEA:12, TNA:13, TEM:null},
+  TAMAR:       {TEA:15, TNA:16, TEM:null},
+  Bolis:       {TEA:23, TNA:24, TEM:null},
+  Futuros:     {TEA:18, TNA:20, TEM:19},
+  'Sintéticos ARS': {TEA:18, TNA:20, TEM:19},
+  'Sintéticos USD': {TEA:23, TNA:24, TEM:null},
+  Bonares:     {TEA:26, TNA:27, TEM:null},
+  Globales:    {TEA:26, TNA:27, TEM:null},
+  Bopreales:   {TEA:26, TNA:27, TEM:null},
+};
+
+let curConv='TEA';
+
 let allC={},actC={},chart=null,sel=[],modalT=null;
 
 async function loadData(){
@@ -214,10 +232,19 @@ function parseCSV(text){
     }
     if(fc){cur=fc;if(!allC[cur])allC[cur]=[];continue;}
     if(!cur)continue;
-    const rate=parseFloat((row[10]||'').replace(',','.').replace('%',''));
     const dur=parseFloat((row[30]||'').replace(',','.'));
     const ticker=(row[1]||row[0]||'').trim();
-    if(!isNaN(rate)&&!isNaN(dur)&&dur>0) allC[cur].push({ticker,rate,duration:dur});
+    // Guardamos todas las columnas de rendimiento posibles
+    const rates={};
+    const cc=COLS[cur]||{};
+    for(const conv of['TEA','TNA','TEM']){
+      const ci=cc[conv];
+      if(ci!=null){
+        const v=parseFloat((row[ci]||'').replace(',','.').replace('%',''));
+        if(!isNaN(v)) rates[conv]=v;
+      }
+    }
+    if(!isNaN(dur)&&dur>0&&Object.keys(rates).length) allC[cur].push({ticker,rates,duration:dur});
   }
   for(const k of Object.keys(allC)){
     allC[k].sort((a,b)=>a.duration-b.duration);
@@ -321,12 +348,36 @@ function populateSel(){
   });
 }
 
+function updConv(){
+  curConv=document.getElementById('sconv').value;
+  // Deshabilitar TEM si alguna curva seleccionada no lo soporta
+  resetAct();renderPills();renderChart();
+}
+
 function upd(){
   const v1=document.getElementById('s1').value,v2=document.getElementById('s2').value,v3=document.getElementById('s3').value;
   const prev=[...sel];
   sel=[v1,v2,v3].filter(Boolean);
   for(const n of sel)if(!prev.includes(n))actC[n]=(allC[n]||[]).map(p=>({...p}));
+  // Actualizar opciones disponibles en selector de convención según curvas elegidas
+  updConvOptions();
   renderPills();renderChart();
+}
+
+function updConvOptions(){
+  const sel2=document.getElementById('sconv');
+  const convs=['TEA','TNA','TEM'];
+  convs.forEach(conv=>{
+    const opt=sel2.querySelector(`option[value="${conv}"]`);
+    if(!opt)return;
+    // TEM solo disponible si TODAS las curvas seleccionadas lo tienen
+    const avail=sel.length===0||sel.every(n=>COLS[n]&&COLS[n][conv]!=null);
+    opt.disabled=!avail;
+    opt.textContent=conv+(avail?'':' (no disp.)');
+  });
+  // Si la convención actual quedó deshabilitada, cambiar a TEA
+  const curOpt=sel2.querySelector(`option[value="${curConv}"]`);
+  if(curOpt&&curOpt.disabled){sel2.value='TEA';curConv='TEA';}
 }
 
 function clearAll(){['s1','s2','s3'].forEach(id=>document.getElementById(id).value='');sel=[];renderPills();renderChart();}
@@ -340,7 +391,7 @@ function renderPills(){
     const p=document.createElement('div');
     p.className='pill';
     p.style.cssText=`border-color:${col}60;color:${col};background:${col}14`;
-    p.innerHTML=`<div class="pdot" style="background:${col}"></div>${n}<span style="color:${col}80;font-size:.58rem;margin-left:3px">${RT[n]||'TEA'}</span><span class="px">✕</span>`;
+    p.innerHTML=`<div class="pdot" style="background:${col}"></div>${n}<span style="color:${col}80;font-size:.58rem;margin-left:3px">${curConv}</span><span class="px">✕</span>`;
     p.onclick=()=>remCurve(n);c.appendChild(p);
   });
 }
@@ -362,17 +413,18 @@ function renderChart(){
   empty.style.display='none';
   const datasets=[],badges=[];
   sel.forEach(n=>{
-    const pts=actC[n]||[],col=colOf(n),rt=RT[n]||'TEA';
+    const pts=actC[n]||[],col=colOf(n),rt=curConv;
+    const ptsFiltered=pts.filter(p=>p.rates&&p.rates[rt]!=null);
     datasets.push({
       label:`${n} (${rt})`,
-      data:pts.map((p,i)=>({x:p.duration,y:p.rate,ticker:p.ticker,cn:n,pi:i})),
+      data:ptsFiltered.map((p,i)=>({x:p.duration,y:p.rates[rt],ticker:p.ticker,cn:n,pi:i})),
       borderColor:col.l,backgroundColor:col.l,
       pointBackgroundColor:col.l,pointBorderColor:'#fff',pointBorderWidth:2,
       pointRadius:7,pointHoverRadius:10,showLine:false,fill:false,isReg:false,
     });
-    const reg=bestReg(pts);
+    const reg=bestReg(ptsFiltered.map(p=>({...p,rate:p.rates[rt]})));
     if(reg){
-      const rl=regLine(pts,reg,col.l);
+      const rl=regLine(ptsFiltered.map(p=>({...p,rate:p.rates[rt]})),reg,col.l);
       if(rl)datasets.push(rl);
       badges.push({n,type:reg.type,r2:reg.r2,col:col.l});
     }
@@ -425,9 +477,9 @@ function renderChart(){
 function renderStats(badges){
   const bar=document.getElementById('stats');bar.innerHTML='';
   sel.forEach(n=>{
-    const pts=actC[n]||[];if(!pts.length)return;
-    const col=colOf(n).l,rt=RT[n]||'TEA';
-    const rates=pts.map(p=>p.rate),durs=pts.map(p=>p.duration);
+    const pts=(actC[n]||[]).filter(p=>p.rates&&p.rates[curConv]!=null);if(!pts.length)return;
+    const col=colOf(n).l,rt=curConv;
+    const rates=pts.map(p=>p.rates[rt]),durs=pts.map(p=>p.duration);
     const bg=badges.find(b=>b.n===n);
     const d=document.createElement('div');d.className='st';
     d.innerHTML=`<div class="stl" style="color:${col}">${n}</div><div class="stv">${Math.min(...rates).toFixed(1)}% – ${Math.max(...rates).toFixed(1)}%</div><div class="sts">${rt} · MD ${Math.min(...durs).toFixed(1)}–${Math.max(...durs).toFixed(1)} · ${pts.length} bonos${bg?` · R²=${bg.r2.toFixed(3)}`:''}</div>`;
@@ -441,8 +493,8 @@ function openModal(raw){
   const col=colOf(raw.cn).l,rt=RT[raw.cn]||'TEA';
   document.getElementById('mbadge').innerHTML=`<span style="background:${col}18;border:1px solid ${col}50;color:${col};padding:3px 10px;border-radius:20px;font-size:.62rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase">${raw.cn}</span>`;
   document.getElementById('mticker').textContent=raw.ticker||'—';
-  document.getElementById('mcurve').textContent=`${rt}`;
-  document.getElementById('mstats').innerHTML=`<div><div class="msl">${rt}</div><div class="msv" style="color:${col}">${raw.y.toFixed(2)}%</div></div><div><div class="msl">Modified Duration</div><div class="msv" style="color:${col}">${raw.x.toFixed(3)}</div></div>`;
+  document.getElementById('mcurve').textContent=`${curConv}`;
+  document.getElementById('mstats').innerHTML=`<div><div class="msl">${curConv}</div><div class="msv" style="color:${col}">${raw.y.toFixed(2)}%</div></div><div><div class="msl">Modified Duration</div><div class="msv" style="color:${col}">${raw.x.toFixed(3)}</div></div>`;
   document.getElementById('mov').classList.add('open');
 }
 
