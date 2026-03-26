@@ -201,13 +201,26 @@ let curConv='TEA';
 
 let allC={},actC={},chart=null,sel=[],modalT=null;
 
+async function fetchWithFallback(url){
+  const proxies=[
+    u=>`https://corsproxy.io/?${encodeURIComponent(u)}`,
+    u=>`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+    u=>`https://proxy.cors.sh/${u}`,
+    u=>`https://thingproxy.freeboard.io/fetch/${u}`,
+  ];
+  for(const makeProxy of proxies){
+    try{
+      const r=await fetch(makeProxy(url),{signal:AbortSignal.timeout(8000)});
+      if(r.ok){const text=await r.text();if(text&&text.length>100)return text;}
+    }catch(e){/* intentar siguiente */}
+  }
+  throw new Error('Todos los proxies fallaron');
+}
+
 async function loadData(){
   try{
-    // Proxy para evitar bloqueo CORS de Google Sheets
-    const proxyURL=`https://corsproxy.io/?${encodeURIComponent(CSV)}`;
-    const r=await fetch(proxyURL);
-    if(!r.ok) throw new Error(`HTTP ${r.status}`);
-    parseCSV(await r.text());
+    const text=await fetchWithFallback(CSV);
+    parseCSV(text);
     setStatus('ok','Datos actualizados');
     document.getElementById('last-updated').textContent='Actualizado: '+new Date().toLocaleTimeString('es-AR');
   }catch(e){
