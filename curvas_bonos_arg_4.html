@@ -203,18 +203,30 @@ let allC={},actC={},chart=null,sel=[],modalT=null;
 
 async function fetchWithFallback(url){
   const proxies=[
-    u=>`https://corsproxy.io/?${encodeURIComponent(u)}`,
-    u=>`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-    u=>`https://proxy.cors.sh/${u}`,
-    u=>`https://thingproxy.freeboard.io/fetch/${u}`,
+    {name:'corsproxy.io',   make:u=>`https://corsproxy.io/?${encodeURIComponent(u)}`},
+    {name:'allorigins',     make:u=>`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`},
+    {name:'cors.sh',        make:u=>`https://proxy.cors.sh/${u}`},
+    {name:'thingproxy',     make:u=>`https://thingproxy.freeboard.io/fetch/${u}`},
+    {name:'directo',        make:u=>u},
   ];
-  for(const makeProxy of proxies){
+  const errs=[];
+  for(const p of proxies){
     try{
-      const r=await fetch(makeProxy(url),{signal:AbortSignal.timeout(8000)});
-      if(r.ok){const text=await r.text();if(text&&text.length>100)return text;}
-    }catch(e){/* intentar siguiente */}
+      console.log(`[fetch] intentando ${p.name}...`);
+      const r=await fetch(p.make(url),{signal:AbortSignal.timeout(10000)});
+      if(r.ok){
+        const text=await r.text();
+        if(text&&text.length>100){console.log(`[fetch] éxito con ${p.name}`);return text;}
+        errs.push(`${p.name}: respuesta vacía`);
+      } else {
+        errs.push(`${p.name}: HTTP ${r.status}`);
+      }
+    }catch(e){
+      errs.push(`${p.name}: ${e.message}`);
+      console.warn(`[fetch] ${p.name} falló:`,e.message);
+    }
   }
-  throw new Error('Todos los proxies fallaron');
+  throw new Error('Todos los proxies fallaron — '+errs.join(' | '));
 }
 
 async function loadData(){
